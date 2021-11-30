@@ -3,10 +3,47 @@
 require 'open3'
 require 'fileutils'
 
-MACHINES = {
-  "server" => {
+$script_install_packages = <<'END'
+set -e
+yum install -y mdadm smartmontools hdparm gdisk
+mdadm --create --verbose /dev/md/test_raid_5 --level raid5 --raid-devices 5 /dev/sd[bcdef]
+mkdir /etc/mdadm
+echo "DEVICE partitions  # no containers" >> /etc/mdadm/mdadm.conf
+mdadm --detail --scan --verbose >> /etc/mdadm/mdadm.conf
+dracut -fv
 
-  }
+raid=/dev/md/test_raid_5
+
+parted $raid mklabel gpt
+
+# Create 5 partitions
+
+for i in $(seq 5); do
+  parted $raid mkpart primary ext4 $((100/5*($i-1)))% $((100/5*$i))%
+done
+
+# Make FS and mount
+for i in $(seq 5); do
+  part=${raid}p$i
+  mount_dest=/raid/part$i
+
+  ### Wait for partition special file to appear
+  ### How to do it without waiting?
+  until [ -e $part ]; do sleep 1; done
+
+  mkfs.ext4 $part
+  mkdir -pv $mount_dest
+  mount $part $mount_dest
+
+  echo ${raid}p$i /raid/part$i ext4 defaults 0 0 >> /etc/fstab
+done
+
+
+END
+
+MACHINES = {
+  :server => {},
+  :to_raid_1 => {}
 }
 
 def virtualbox_vm_info(vm_name)
@@ -16,6 +53,7 @@ def virtualbox_vm_info(vm_name)
   return stdout
 end
 
+
 def get_vm_id(name="default")
   file = ".vagrant/machines/" + name.to_s + "/virtualbox/id"
   if File.exist?(file)
@@ -23,18 +61,17 @@ def get_vm_id(name="default")
   end
 end
   
+
 def virtualbox_add_storage_controller(config, name, type)
   config.vm.provider "virtualbox" do |v|
     v.customize [ "storagectl", :id,
                   "--name", name,
                   "--add", type ]
-
   end
 end
 
 
-def virtualbox_create_disk(config, filename, size)
-  puts filename
+def virtualbox_create_disk_file(config, filename, size)
   config.vm.provider "virtualbox" do |v|
     v.customize [ "createmedium", "disk", "--filename", filename, "--size", size ]
   end
@@ -60,20 +97,22 @@ def add_disks(config_obj, name)
   rescue => e
   end
 
+  #### Disk configuration
   sata_controller_name = "SATA#1"
   nvme_controller_name = "NVME#1"
   has_sata = false
   has_nvme = false
-  disk_dir = "vm_disks"
+  disk_dir = "#{name}_disks"
 
   disks = []
   6.times do
-    disks << { type: "sata", size: 1024 }
+    disks << { type: "sata", size: 250 }
   end
 
   5.times do
-    disks << { type: "nvme", size: 1024 }
+    disks << { type: "nvme", size: 250 }
   end
+  #### 
 
   if !File.directory?(disk_dir)
     FileUtils.mkdir_p(disk_dir)
@@ -81,24 +120,25 @@ def add_disks(config_obj, name)
 
 
   if vm_info
-
     params = {}
     for line in vm_info.split(/\n/)
       key, value = line.split("=", 2).map { |x| x.sub(/"(.*)"/) { $1 } }
       params[key] = value
     end
 
-    if params.any? { |k, v| k =~ /storagecontrollertype(\d+)/ && v.downcase == "intelahci" }
-      has_sata = true
-      sata_controller_name = params["storagecontrollername" + $1]
-    end
+    params.each do |k, v|
+      if k =~ /storagecontrollertype(\d+)/ && v.downcase == "intelahci"
+        has_sata = true
+        sata_controller_name = params["storagecontrollername" + $1]
+      end
 
-    if params.any? { |k, v| k =~ /storagecontrollername(\d+)/ && v == nvme_controller_name }
-      has_nvme = true
+      if k =~ /storagecontrollername(\d+)/ && v == nvme_controller_name
+        has_nvme = true
+      end
     end
-    
-    
   end
+    
+    
 
   unless has_nvme
     virtualbox_add_storage_controller(config_obj, name = nvme_controller_name, type = "pcie")
@@ -111,9 +151,13 @@ def add_disks(config_obj, name)
 
   disks.reduce({}) { |h, el| (h[ el[:type] ] ||= []) << el; h }.each do |type, disks|
     disks.each_with_index do |el, i|
-      port = i + 1 # Assume boot disk is on port 0
+      
+      # Assume boot disk is on SATA port 0
+      # Also start from NVME port 0, VM can't see disks otherwise
+      port = (type == "sata") ? i + 1 : i 
+
       filename = "#{disk_dir}/#{ type }_#{ i.to_s }.vdi"
-      virtualbox_create_disk(config_obj, filename, el[:size]) unless File.exist?(filename)
+      virtualbox_create_disk_file(config_obj, filename, el[:size]) unless File.exist?(filename)
       virtualbox_attach_disk(config_obj,
                              (type == "sata") ?
                                sata_controller_name :
@@ -122,38 +166,72 @@ def add_disks(config_obj, name)
                              filename)
     end
   end
-  
-  
-  
 end
-
 
 
 Vagrant.configure("2") do |config|
 
-  config.vm.boot_timeout = 10*60
+  config.vm.synced_folder ".", "/vagrant", disabled: true
   
   MACHINES.each do |boxname, boxconfig|
 
     config.vm.define boxname do |box|
-      #box.vm.box = "bento/centos-8"
-      box.vm.box = "centos/8"
-      config.vm.box_version = "2011.0"
-      
-      #virtualbox_vm_id = get_vm_id( boxname )
+      box.vm.box = "centos/7"
       
       box.vm.provider "virtualbox" do |v|
         v.memory = 1024
         v.cpus = 1
-        #v.name = boxconfig["name"]
-
       end
 
-      add_disks( box, boxname )
+      if boxname == :server
+        add_disks( box, boxname )
+        box.vm.provision "shell" do |s|
+          s.inline = $script_install_packages
+          s.reboot = true
+        end
+      end
+
+      if boxname == :to_raid_1
+        
+        begin
+          vm_info = virtualbox_vm_info( get_vm_id(boxname) )
+        rescue => e
+        end
+
+        if vm_info
+          params = {}
+          for line in vm_info.split(/\n/)
+            key, value = line.split("=", 2).map { |x| x.sub(/"(.*)"/) { $1 } }
+            params[key] = value
+          end
+
+          controller = nil
+          attached = nil
+          filename = "#{boxname}_disk.vdi"
+          params.each do |k, v|
+            if k =~ /(.*)-ImageUUID-(.*)/
+              controller = $1
+            end
+
+            if v =~ /#{filename}/
+              attached = true
+            end
+          end
+          box.vm.provider "virtualbox" do |vbox|
+            vbox.customize [ "clonemedium", "disk", v, filename, "--format", "vdi" ] if !File.exist?(filename)
+            vbox.customize [ "storageattach", :id, "--storagectl", controller,
+                             "--device", 0,
+                             "--port", 1,
+                             "--type", "hdd",
+                             "--medium", filename ] if !attached
+          end
+
+        end
+
+        box.vm.provision "shell", inline: "echo RUN '\"vagrant up\"' AGAIN TO GET 2nd DISK; poweroff"
+      end
 
     end
-    
   end
-  
 end
 
