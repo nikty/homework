@@ -1,0 +1,49 @@
+# -*- mode: ruby -*-
+
+require '../vagrant_add_disks.rb'
+
+MACHINES = {
+  :server => {
+    :disks => [
+      { size: 10240, type: "sata" },
+      { size: 2048, type: "sata" },
+      { size: 1024, type: "sata" },
+      { size: 1024, type: "sata" },
+    ]      
+      
+  },
+
+}
+
+
+Vagrant.configure("2") do |config|
+
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+  
+  MACHINES.each do |boxname, boxconfig|
+
+    config.vm.define boxname do |box|
+      box.vm.box = "centos/7"
+      box.vm.box_version = "1804.02"
+      
+      box.vm.provider "virtualbox" do |v|
+        v.memory = 256
+        v.cpus = 1
+      end
+
+      add_disks( box, boxname, boxconfig[:disks] )
+
+      box.vm.provision "shell" do |s|
+        s.path = "task_1_shrink_root_00.sh"
+        s.reboot = true
+      end
+      
+      box.vm.provision "shell" do |s|
+        s.path = "task_1_shrink_root_01.sh"
+        s.reboot = true
+      end
+      
+    end
+  end
+end
+
