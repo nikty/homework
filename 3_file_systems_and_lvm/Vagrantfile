@@ -33,24 +33,30 @@ Vagrant.configure("2") do |config|
 
       add_disks( box, boxname, boxconfig[:disks] )
 
-      box.vm.provision "shell" do |s|
+      box.vm.provision "shrink-root-00", type: "shell" do |s|
         s.path = "task_1_shrink_root_00.sh"
         s.reboot = true
       end
       
-      box.vm.provision "shell" do |s|
+      box.vm.provision "shrink-root-01", type: "shell" do |s|
         s.path = "task_1_shrink_root_01.sh"
         s.reboot = true
       end
 
-      box.vm.provision "shell" do |s|
+      box.vm.provision "lv_var_home", type: "shell" do |s|
         s.path = "task_2_add_logical_volume_for_home_and_var.sh"
         s.reboot = true
       end
 
-      box.vm.provision "shell" do |s|
+      box.vm.provision "home_snapshot", type: "shell" do |s|
         s.path = "task_3_home_snapshot.sh"
         s.reboot = true
+      end
+
+      box.vm.provision "home_snapshot_check", type: "shell" do |s|
+        s.inline = <<'END'
+ls /home/vagrant/file* >&2
+END
       end
       
     end
