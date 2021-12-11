@@ -16,7 +16,7 @@
 * task_2_add_logical_volume_for_home_and_var.sh
 
 
-# Задание 3
+# Задание 6
 
 > Работа со снапшотами:
 > сгенерировать файлы в /home/
