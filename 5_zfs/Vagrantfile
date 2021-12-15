@@ -1,0 +1,57 @@
+# -*- mode: ruby -*-
+
+require '../vagrant_add_disks.rb'
+
+MACHINES = {
+  :server => {
+    :disks => [
+      { size: 1024, type: "sata" },
+      { size: 1024, type: "sata" },
+      { size: 1024, type: "sata" },
+      { size: 1024, type: "sata" },
+    ],
+    :networks => {
+      :private_network => {
+        :ip => "192.168.56.20"
+      }
+    }
+  },
+
+  :client => {
+    :disks => [
+      { size: 1024, type: "sata" },
+      { size: 1024, type: "sata" },
+      { size: 1024, type: "sata" },
+      { size: 1024, type: "sata" },
+    ],
+    :networks => {
+      :private_network => {
+        :ip => "192.168.56.40"
+      }
+    }
+  }
+}
+
+Vagrant.configure("2") do |config|
+
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  MACHINES.each do |boxname, boxconfig|
+    config.vm.define boxname do |box|
+      box.vm.box = "bento/fedora-34"
+
+      box.vm.provider "virtualbox" do |v|
+        v.memory = 2048
+        v.cpus = 2
+      end
+
+      add_disks( box, boxname, boxconfig[:disks] )
+
+      boxconfig[:networks].each do |net, netcfg|
+        box.vm.network net, netcfg
+      end
+    end
+  end
+end
+
+      
