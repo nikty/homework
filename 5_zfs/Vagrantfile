@@ -41,8 +41,8 @@ Vagrant.configure("2") do |config|
       box.vm.box = "bento/fedora-34"
 
       box.vm.provider "virtualbox" do |v|
-        v.memory = 2048
-        v.cpus = 2
+        v.memory = 1024
+        v.cpus = 1
       end
 
       add_disks( box, boxname, boxconfig[:disks] )
@@ -50,6 +50,21 @@ Vagrant.configure("2") do |config|
       boxconfig[:networks].each do |net, netcfg|
         box.vm.network net, netcfg
       end
+
+      box.vm.provision "install_zfs", type: "shell" do |s|
+        s.inline = <<'END'
+dnf install -y https://zfsonlinux.org/fedora/zfs-release$(rpm -E %dist).noarch.rpm
+dnf install -y kernel-devel-$(uname -r)
+dnf install -y zfs
+END
+      end
+
+
+
+        
+        
+        
+
     end
   end
 end
