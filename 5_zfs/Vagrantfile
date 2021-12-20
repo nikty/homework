@@ -1,5 +1,5 @@
-# -*- mode: ruby -*-
-
+# coding: utf-8
+# -*- ruby -*-
 require '../vagrant_add_disks.rb'
 
 MACHINES = {
@@ -56,15 +56,89 @@ Vagrant.configure("2") do |config|
 dnf install -y https://zfsonlinux.org/fedora/zfs-release$(rpm -E %dist).noarch.rpm
 dnf install -y kernel-devel-$(uname -r)
 dnf install -y zfs
+modprobe zfs
 END
       end
 
+      if boxname == :server
+        box.vm.provision  "task_1_compression", type: "shell" do |s|
+          s.inline = <<'END'
+# Look up supported compression algorithms in `man zfsprops`
+man zfsprops 2>/dev/null | grep '^\s*compression' | head -n1
 
+# Destroy pool
+zpool destroy tank
 
-        
-        
-        
+# Create zpool and filesystems
+mkdir -p /storage/zfs
+zpool create -m /storage/zfs/tank tank mirror /dev/sd[bc]
 
+COMP_ALGS="off gzip lz4 lzjb zle zstd gzip-1 gzip-9 zstd-1 zstd-19"
+for comp in $COMP_ALGS; do
+  zfs create -o compression=$comp tank/fs_compress_$comp
+done
+
+# Download test files Canterbury Corpus and extract it to all filesystems
+(
+  cd /tmp
+  #wget -q "http://corpus.canterbury.ac.nz/resources/cantrbry.zip"
+  wget -q "https://www.gutenberg.org/files/2600/2600-0.txt"
+)
+for comp in $COMP_ALGS; do
+  (
+    cd /storage/zfs/tank/fs_compress_$comp
+    #unzip /tmp/cantrbry.zip >/dev/null 2>&1
+    cp /tmp/2600-0.txt .
+  )
+done
+
+# Result
+zpool sync
+size_comp_off=$(zfs get -p -H used tank/fs_compress_off | awk '{print $3}')
+for comp in $COMP_ALGS; do
+  [ "$comp" = "off" ] && continue
+  size=$(zfs get -p -H used tank/fs_compress_$comp | awk '{print $3}')
+  printf -- "%10s compression ratio %10s\n" $comp .$(($size*1000/$size_comp_off))
+done | sort -n -k 4.2
+  
+END
+        end
+
+        box.vm.provision "task_2_pool_settings", type: "shell" do |s|
+          s.inline = <<'END'
+# Download and unpack files
+wget -q -O /tmp/zpool.tar.gz "https://drive.google.com/uc?export=download&id=1KRBNW33QWqbvbVHa3hLJivOAt60yukkg"
+tar -xvf /tmp/zpool.tar.gz
+
+# Import zfs pool from directory
+zpool import -d $PWD/zpoolexport -a
+
+# Query ZFS
+echo "Размер хранилища"
+zpool get size otus
+
+echo "Pool type"
+zdb -C otus | grep -e '^\s*\(children\|type\)'
+
+echo "Значение recordsize"
+zfs get recordsize otus
+
+echo "Сжатие"
+zfs get compression otus
+
+echo "Контрольная сумма"
+zfs get checksum otus
+END
+        end
+
+        box.vm.provision "task_3_find_message", type: "shell" do |s|
+          s.inline = <<'END'
+wget -q -O /tmp/otus_task2.file "https://drive.google.com/uc?export=download&id=1gH8gCL9y7Nd5Ti3IRmplZPF1XjzxeRAG"
+zfs receive otus/task3 < /tmp/otus_task2.file
+find /otus/task3 -name "secret_message" -exec cat {} \;
+END
+        end
+      end
     end
   end
 end
