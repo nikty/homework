@@ -1,0 +1,27 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+MACHINES = {
+  :server => {
+    :box => "opensuse/Leap-15.3.x86_64"
+  },
+  :client => {
+    :box => "opensuse/Leap-15.3.x86_64"
+  }
+}
+
+Vagrant.configure("2") do |config|
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = 512
+  end
+
+  MACHINES.each do |boxname, boxconfig|
+    config.vm.box = "opensuse/Leap-15.3.x86_64"
+
+    config.vm.define boxname do |box|
+      box.vm.box = boxconfig[:box]
+    end
+  end
+
+end
