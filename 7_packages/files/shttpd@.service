@@ -1,0 +1,6 @@
+[Unit]
+Description=SHTTPD per-connection server
+
+[Service]
+ExecStart=-/usr/bin/shttpd -i -C /var/www/ -p 80 -m /usr/lib64/shttpd/modules/dirlist.mod:/usr/lib64/shttpd/modules/static.mod
+StandardInput=socket

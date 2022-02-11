@@ -1,0 +1,58 @@
+Vagrant.configure("2") do |config|
+  config.vm.provider "virtualbox" do |vbox|
+    #vbox.memory = 1024
+    #vbox.cpus = 1
+  end
+
+  config.vm.box = "bento/fedora-latest"
+
+
+  config.vm.provision "copy_files", type: "file", source: "files", destination: "~/"
+
+  config.vm.provision "package_rpm", type: "shell" do |s|
+    s.inline = '
+# Install necessary packages
+dnf install -y gcc rpm-build rpm-devel rpmlint make python bash coreutils diffutils patch rpmdevtools createrepo
+
+# Make directory structure for building RPMs
+rpmdev-setuptree
+
+# Download program sources
+wget -O $HOME/rpmbuild/SOURCES/shttpd-master.zip "https://github.com/singpolyma/shttpd/archive/refs/heads/master.zip"
+
+# Copy systemd units and spec file
+cp "/home/vagrant/files/shttpd@.service" "/home/vagrant/files/shttpd.socket" "$HOME/rpmbuild/SOURCES"
+cp "/home/vagrant/files/shttpd.spec" "$HOME/rpmbuild/SPECS"
+
+# Make RPMs
+rpmbuild -ba $HOME/rpmbuild/SPECS/shttpd.spec
+'
+  end
+
+  config.vm.provision "install_shttpd", type: "shell", inline: '
+dnf -y install $HOME/rpmbuild/RPMS/noarch/shttpd-0.1-1.fc34.noarch.rpm
+mkdir -p /var/www
+systemctl enable --now shttpd.socket
+'
+
+  config.vm.provision "create_repo", type: "shell", inline: '
+mkdir -p /var/www/repo
+cp "$HOME/rpmbuild/RPMS/noarch/shttpd-0.1-1.fc34.noarch.rpm" /var/www/repo
+createrepo /var/www/repo
+
+cat > /etc/yum.repos.d/otus.repo <<"END"
+[otus]
+name=otus
+baseurl=http://localhost/repo
+enabled=1
+END
+
+# Check
+dnf -y install shttpd
+'
+
+  
+
+
+end
+    
