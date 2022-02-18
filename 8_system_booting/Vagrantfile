@@ -1,0 +1,38 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "centos/7"
+  config.vm.box_version = "1804.02"
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  config.vm.provision "rename_vg", type: "shell", inline: <<'END'
+new_vg_name="RenamedVG"
+
+# Rename VG
+lv_root=$(findmnt -n -f -o SOURCE  /)
+vg_root=$(lvs --noheadings -o vg_name "$lv_root" | sed 's/^\s*//; s/\s*$//')
+vgrename "$vg_root" "$new_vg_name"
+
+new_lv_root=$(echo "$lv_root" | sed "s/$vg_root/$new_vg_name/")
+
+# Update config files
+
+sed -i "s/$vg_root/$new_vg_name/g" /etc/default/grub /boot/grub2/grub.cfg /etc/fstab
+
+# Enable verbose boot
+sed -i "/linux16/ { s/rhgb//g; s/quiet//g }" /boot/grub2/grub.cfg
+
+END
+
+  config.vm.provision "reboot", type: "shell", inline: <<'END'
+# HACK: without 'sleep 1m' system doesn't apply changes made above (why?)
+sleep 1m
+
+# HACK: using screen to avoid hanging SSH session. "reboot -f &" won't work (why?)
+screen -dm sudo sh -c 'reboot -f'
+END
+
+  config.vm.provision "check", type: "shell", inline: <<'END', run: "never"
+findmnt /
+END
+
+end
+
