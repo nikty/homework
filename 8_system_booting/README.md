@@ -36,6 +36,13 @@
 
 ## 3. Добавить модуль в initrd.
 
+Сделано через shell в Vagrantfile, модуль выводит "Hello, world".
+
+* Запуск стенда:
+`vagrant up --provision-with add_dracut_module`
+* Проверка:
+`vagrant ssh -c 'sudo reboot'`, далее смотреть в GUI VirtualBox
+
 
 
 ## 4. Не выполнялось
