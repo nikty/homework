@@ -1,3 +1,61 @@
 Vagrant.configure("2") do |config|
   config.vm.box = "generic/oracle8"
+
+  config.vm.provision "task1", type: "shell" do |s|
+    s.inline = <<'END'
+# Create config file
+
+cat > /etc/sysconfig/task1 <<"EOF"
+WORD="foo"
+LOGFILE=/var/log/task1_log.txt
+EOF
+
+# Create script
+
+cat > /opt/task1.sh <<"EOF"
+#!/bin/sh
+
+word=$1
+log=$2
+date=$(date)
+
+[ $# -ne 2 ] && exit 1
+
+if grep -- "$word" "$log"; then
+  logger "$date: '$word' found in '$log'"
+fi
+EOF
+chmod +x /opt/task1.sh
+
+# Create service unit file
+cat > /etc/systemd/system/task1.service <<"EOF"
+[Unit]
+Description=task1: grep string in log file
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/sysconfig/task1
+ExecStart=/opt/task1.sh ${WORD} ${LOGFILE}
+EOF
+
+# Run service periodically via systemd.timer
+cat > /etc/systemd/system/task1.timer <<"EOF"
+[Unit]
+Description=task1: run periodically
+
+[Timer]
+OnUnitActiveSec=15
+AccuracySec=1us
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Enable service
+systemctl daemon-reload
+systemctl enable --now task1.timer
+
+END
+  end
+
 end
