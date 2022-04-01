@@ -15,16 +15,16 @@
 
 Шаги сброса пароля:
 * попасть в shell initramfs:
- * убрать из згрузчика опции, связанные с dracut (`rd.*`), без этого не удавалось попасть в shell
- * добавить `rd.break enforcing=0`
+    * убрать из згрузчика опции, связанные с dracut (`rd.*`), без этого не удавалось попасть в shell
+    * добавить `rd.break enforcing=0`
 * внутри shell
- * `lvm vgchange -a y`
- * `mount /dev/mapper/VolGroup00-LogVol00 /sysroot`
- * `chroot /sysroot`
- * `passwd`
- * `exit`
+    * `lvm vgchange -a y`
+    * `mount /dev/mapper/VolGroup00-LogVol00 /sysroot`
+    * `chroot /sysroot`
+    * `passwd`
+    * `exit`
 * система загрузится с корневого раздела, после логина 
- * `restorecon /etc/shadow`
+    * `restorecon /etc/shadow`
 
 
 ## 2. Установить систему с LVM, после чего переименовать VG.
